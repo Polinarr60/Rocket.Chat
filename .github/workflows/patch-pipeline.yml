@@ -56,14 +56,6 @@ jobs:
           git config user.email "actions@github.com"
           corepack enable
 
-      - name: Install cross-platform dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          yarn config set supportedArchitectures --json '{"os":["linux"],"cpu":["arm64","x64"],"libc":["glibc","musl"]}'
-          yarn install --immutable
-          git restore .yarnrc.yml
-
       - name: Apply and test patches sequentially
         shell: bash
         env:
@@ -215,8 +207,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: /tmp/dist
-          file: ${{ github.workspace }}/apps/meteor/.docker/Dockerfile.alpine
-          target: release-standard
+          file: ${{ github.workspace }}/apps/meteor/.docker/Dockerfile.debian
+          build-args: |
+            DENO_VERSION=${{ steps.upstream.outputs.deno-version }}
           platforms: linux/amd64
           push: true
           tags: |
