@@ -4,6 +4,8 @@ import type { IMessage, IRoom, IUser } from '@rocket.chat/core-typings';
 import { Messages, EmojiCustom, Rooms, Users } from '@rocket.chat/models';
 import { Meteor } from 'meteor/meteor';
 
+import { isEmojiRestricted, parseEmojiRestrictions } from '../../../../lib/utils/emojiRestrictions';
+import { settings } from '../../../settings';
 import { canAccessRoomAsync } from '../../authorization';
 import { hasPermissionAsync } from '../../authorization/hasPermission';
 import { callbacks } from '../../callbacks';
@@ -128,6 +130,13 @@ export async function executeSetReaction(
 
 	if (userAlreadyReacted === shouldReact) {
 		return;
+	}
+
+	const restrictedEmojis = parseEmojiRestrictions(settings.get('Message_Restricted_Emojis'));
+	if (shouldReact && isEmojiRestricted(reaction, restrictedEmojis) && !(await hasPermissionAsync(user, 'manage-emoji'))) {
+		throw new Meteor.Error('error-not-allowed', 'This emoji has been disabled by an administrator.', {
+			method: 'setReaction',
+		});
 	}
 
 	const room = await Rooms.findOneById(message.rid);

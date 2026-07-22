@@ -27,6 +27,7 @@ const canAccessRoomAsyncMock = sinon.stub();
 const isTheLastMessageMock = sinon.stub();
 const notifyOnMessageChangeMock = sinon.stub();
 const hasPermissionAsyncMock = sinon.stub();
+const settingsGetMock = sinon.stub();
 const i18nMock = { t: sinon.stub() };
 const callbacksRunMock = sinon.stub();
 const meteorErrorMock = class extends Error {
@@ -45,6 +46,7 @@ const { removeUserReaction, executeSetReaction, setReaction } = p
 		'../../i18n': { i18n: i18nMock },
 		'../../authorization': { canAccessRoomAsync: canAccessRoomAsyncMock },
 		'../../authorization/hasPermission': { hasPermissionAsync: hasPermissionAsyncMock },
+		'../../../settings': { settings: { get: settingsGetMock } },
 		'../emoji': { emoji: { list: emojiList } },
 		'../../messages/isTheLastMessage': { isTheLastMessage: isTheLastMessageMock },
 		'../../notifyListener': {
@@ -121,6 +123,13 @@ describe('Reactions', () => {
 	describe('executeSetReaction', () => {
 		beforeEach(() => {
 			modelsMock.EmojiCustom.countByNameOrAlias.reset();
+			modelsMock.Users.findOneById.reset();
+			modelsMock.Messages.findOneById.reset();
+			modelsMock.Rooms.findOneById.reset();
+			canAccessRoomAsyncMock.reset();
+			hasPermissionAsyncMock.reset();
+			settingsGetMock.reset();
+			settingsGetMock.withArgs('Message_Restricted_Emojis').returns('');
 		});
 		it('should throw an error if reaction is not on emoji list', async () => {
 			modelsMock.EmojiCustom.countByNameOrAlias.resolves(0);
@@ -171,6 +180,41 @@ describe('Reactions', () => {
 
 			const res = await executeSetReaction('test', 'test', 'test');
 			expect(res).to.be.undefined;
+		});
+		it('should reject a restricted reaction from a user without emoji management permission', async () => {
+			modelsMock.EmojiCustom.countByNameOrAlias.resolves(1);
+			modelsMock.Users.findOneById.resolves({ username: 'test', roles: ['user'] });
+			modelsMock.Messages.findOneById.resolves({ _id: 'message', rid: 'room' });
+			settingsGetMock.withArgs('Message_Restricted_Emojis').returns(':test:, angry');
+
+			await expect(executeSetReaction('test', ':test:', 'message', true)).to.be.rejectedWith('error-not-allowed');
+			expect(modelsMock.Rooms.findOneById.called).to.be.false;
+		});
+		it('should allow a user with emoji management permission to use a restricted reaction', async () => {
+			const user = { username: 'admin', roles: ['admin'] };
+			modelsMock.EmojiCustom.countByNameOrAlias.resolves(1);
+			modelsMock.Users.findOneById.resolves(user);
+			modelsMock.Messages.findOneById.resolves({ _id: 'message', rid: 'room' });
+			modelsMock.Rooms.findOneById.resolves({ _id: 'room', t: 'c' });
+			canAccessRoomAsyncMock.resolves(true);
+			hasPermissionAsyncMock.withArgs(user, 'manage-emoji').resolves(true);
+			settingsGetMock.withArgs('Message_Restricted_Emojis').returns('test');
+
+			await expect(executeSetReaction('admin', ':test:', 'message', true)).to.be.fulfilled;
+		});
+		it('should allow a user to remove an existing restricted reaction', async () => {
+			modelsMock.EmojiCustom.countByNameOrAlias.resolves(1);
+			modelsMock.Users.findOneById.resolves({ username: 'test', roles: ['user'] });
+			modelsMock.Messages.findOneById.resolves({
+				_id: 'message',
+				rid: 'room',
+				reactions: { ':test:': { usernames: ['test'] } },
+			});
+			modelsMock.Rooms.findOneById.resolves({ _id: 'room', t: 'c' });
+			canAccessRoomAsyncMock.resolves(true);
+			settingsGetMock.withArgs('Message_Restricted_Emojis').returns('test');
+
+			await expect(executeSetReaction('test', ':test:', 'message', false)).to.be.fulfilled;
 		});
 		it('should use the message from param when the type is not an string', async () => {
 			modelsMock.EmojiCustom.countByNameOrAlias.resolves(1);

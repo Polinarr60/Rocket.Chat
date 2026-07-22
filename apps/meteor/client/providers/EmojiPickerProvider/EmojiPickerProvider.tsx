@@ -1,9 +1,11 @@
 import { useDebouncedState, useStableCallback, useLocalStorage } from '@rocket.chat/fuselage-hooks';
+import { usePermission, useSetting } from '@rocket.chat/ui-contexts';
 import type { ReactNode, ContextType } from 'react';
 import { useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import { useUpdateCustomEmoji } from './useUpdateCustomEmoji';
 import { emoji, getFrequentEmoji, createEmojiListByCategorySubscription } from '../../../app/emoji/client';
+import { parseEmojiRestrictions } from '../../../lib/utils/emojiRestrictions';
 import { EmojiPickerContext } from '../../contexts/EmojiPickerContext';
 import EmojiPicker from '../../views/composer/EmojiPicker';
 
@@ -15,6 +17,10 @@ const RECENT_EMOJIS_LIMIT = 27;
 export type EmojiPickerProviderProps = { children: ReactNode };
 
 const EmojiPickerProvider = ({ children }: EmojiPickerProviderProps) => {
+	const canManageEmoji = usePermission('manage-emoji');
+	const restrictedEmojisSetting = useSetting('Message_Restricted_Emojis', '');
+	const restrictedEmojis = useMemo(() => parseEmojiRestrictions(restrictedEmojisSetting), [restrictedEmojisSetting]);
+
 	const [emojiPicker, setEmojiPicker] = useState<ReactNode>(null);
 	const [emojiToPreview, setEmojiToPreview] = useDebouncedState<{ emoji: string; name: string } | null>(null, 100);
 	const [recentEmojis, setRecentEmojis] = useLocalStorage<string[]>('emoji.recent', []);
@@ -26,13 +32,33 @@ const EmojiPickerProvider = ({ children }: EmojiPickerProviderProps) => {
 	const [customItemsLimit, setCustomItemsLimit] = useState(DEFAULT_ITEMS_LIMIT);
 
 	const [quickReactions, _setQuickReactions] = useState<{ emoji: string; image: string }[]>(() =>
-		getFrequentEmoji(frequentEmojis.map(([emoji]) => emoji)),
+		getFrequentEmoji(
+			frequentEmojis.map(([emoji]) => emoji),
+			canManageEmoji,
+			restrictedEmojis,
+		),
 	);
 
-	const setQuickReactions = useStableCallback(() => _setQuickReactions(getFrequentEmoji(frequentEmojis.map(([emoji]) => emoji))));
+	const setQuickReactions = useStableCallback(() =>
+		_setQuickReactions(
+			getFrequentEmoji(
+				frequentEmojis.map(([emoji]) => emoji),
+				canManageEmoji,
+				restrictedEmojis,
+			),
+		),
+	);
 	const [sub, getSnapshot] = useMemo(() => {
-		return createEmojiListByCategorySubscription(customItemsLimit, actualTone, recentEmojis, setRecentEmojis, setQuickReactions);
-	}, [customItemsLimit, actualTone, recentEmojis, setRecentEmojis, setQuickReactions]);
+		return createEmojiListByCategorySubscription(
+			customItemsLimit,
+			actualTone,
+			recentEmojis,
+			setRecentEmojis,
+			setQuickReactions,
+			canManageEmoji,
+			restrictedEmojis,
+		);
+	}, [customItemsLimit, actualTone, recentEmojis, setRecentEmojis, setQuickReactions, canManageEmoji, restrictedEmojis]);
 
 	const [emojiListByCategory, categoriesIndexes] = useSyncExternalStore(sub, getSnapshot);
 
@@ -43,15 +69,21 @@ const EmojiPickerProvider = ({ children }: EmojiPickerProviderProps) => {
 			const empty: [string, number][] = frequentEmojis.some(([emojiName]) => emojiName === emoji) ? [] : [[emoji, 0]];
 
 			const sortedFrequent = [...empty, ...frequentEmojis]
-				.map(([emojiName, count]) => {
-					return (emojiName === emoji ? [emojiName, Math.min(count + 5, 100)] : [emojiName, Math.max(count - 1, 0)]) as [string, number];
+				.map<[string, number]>(([emojiName, count]) => {
+					return emojiName === emoji ? [emojiName, Math.min(count + 5, 100)] : [emojiName, Math.max(count - 1, 0)];
 				})
 				.sort(([, frequentA], [, frequentB]) => frequentB - frequentA);
 
 			setFrequentEmojis(sortedFrequent);
-			_setQuickReactions(getFrequentEmoji(sortedFrequent.map(([emoji]) => emoji)));
+			_setQuickReactions(
+				getFrequentEmoji(
+					sortedFrequent.map(([emoji]) => emoji),
+					canManageEmoji,
+					restrictedEmojis,
+				),
+			);
 		},
-		[frequentEmojis, setFrequentEmojis],
+		[frequentEmojis, setFrequentEmojis, canManageEmoji, restrictedEmojis],
 	);
 
 	const addRecentEmoji = useCallback(
@@ -59,7 +91,7 @@ const EmojiPickerProvider = ({ children }: EmojiPickerProviderProps) => {
 			addFrequentEmojis(_emoji);
 
 			const recent = recentEmojis || [];
-			const pos = recent.indexOf(_emoji as never);
+			const pos = recent.indexOf(_emoji);
 
 			if (pos !== -1) {
 				recent.splice(pos, 1);

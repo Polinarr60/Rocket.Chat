@@ -49,6 +49,14 @@ export const createMessageSettings = () =>
 				public: true,
 			});
 		});
+		await this.section('Message_Emoji_Restrictions', async function () {
+			await this.add('Message_Restricted_Emojis', '', {
+				type: 'string',
+				multiline: true,
+				public: true,
+				i18nDescription: 'Message_Restricted_Emojis_Description',
+			});
+		});
 		await this.section('Read_Receipts', async function () {
 			await this.add('Message_Read_Receipt_Enabled', false, {
 				type: 'boolean',

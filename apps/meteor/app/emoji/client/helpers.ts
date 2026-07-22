@@ -3,6 +3,7 @@ import type { TranslationKey } from '@rocket.chat/ui-contexts';
 
 import type { EmojiCategory, EmojiItem } from '.';
 import { emoji, emojiEmitter } from './lib';
+import { isEmojiRestricted } from '../../../lib/utils/emojiRestrictions';
 
 export const CUSTOM_CATEGORY = 'rocket';
 export const CUSTOM_CATEGORY_CLASSNAME = 'emojipicker--custom';
@@ -25,15 +26,17 @@ export const createEmojiListByCategorySubscription = (
 	recentEmojis: string[],
 	setRecentEmojis: (emojis: string[]) => void,
 	setQuickReactions: () => void,
+	canManageEmoji: boolean,
+	restrictedEmojis: ReadonlySet<string>,
 ): [subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => ReturnType<typeof createPickerEmojis>] => {
 	let result: ReturnType<typeof createPickerEmojis> = [[], []];
 	updateRecent(recentEmojis);
 
 	const sub = (cb: () => void) => {
-		result = createPickerEmojis(customItemsLimit, actualTone, recentEmojis, setRecentEmojis);
+		result = createPickerEmojis(customItemsLimit, actualTone, recentEmojis, setRecentEmojis, canManageEmoji, restrictedEmojis);
 		setQuickReactions();
 		return emojiEmitter.on('updated', () => {
-			result = createPickerEmojis(customItemsLimit, actualTone, recentEmojis, setRecentEmojis);
+			result = createPickerEmojis(customItemsLimit, actualTone, recentEmojis, setRecentEmojis, canManageEmoji, restrictedEmojis);
 			setQuickReactions();
 			cb();
 		});
@@ -47,6 +50,8 @@ export const createPickerEmojis = (
 	actualTone: number,
 	recentEmojis: string[],
 	setRecentEmojis: (emojis: string[]) => void,
+	canManageEmoji: boolean,
+	restrictedEmojis: ReadonlySet<string>,
 ): [EmojiPickerItem[], CategoriesIndexes] => {
 	const categories = getCategoriesList();
 	const categoriesIndexes: CategoriesIndexes = [];
@@ -54,7 +59,9 @@ export const createPickerEmojis = (
 	const mappedCategories = categories.reduce<EmojiPickerItem[]>((acc, category) => {
 		categoriesIndexes.push({ key: category.key, index: acc.length });
 		acc.push({ category: category.key, i18n: category.i18n });
-		acc.push(...createEmojiList(customItemsLimit, category.key, actualTone, recentEmojis, setRecentEmojis));
+		acc.push(
+			...createEmojiList(customItemsLimit, category.key, actualTone, recentEmojis, setRecentEmojis, canManageEmoji, restrictedEmojis),
+		);
 		return acc;
 	}, []);
 
@@ -67,6 +74,8 @@ export const createEmojiList = (
 	actualTone: number | null,
 	recentEmojis: string[],
 	setRecentEmojis: (emojis: string[]) => void,
+	canManageEmoji: boolean,
+	restrictedEmojis: ReadonlySet<string>,
 ): (RowItem | LoadMoreItem)[] => {
 	const items: RowItem = [];
 	const emojiPackages = Object.entries(emoji.packages);
@@ -81,6 +90,14 @@ export const createEmojiList = (
 		const total = category === CUSTOM_CATEGORY ? customItemsLimit - count : _total;
 		for (let i = 0; i < total; i++) {
 			const current = emojiPackage.emojisByCategory[category][i];
+
+			if (!current) {
+				continue;
+			}
+
+			if (!canManageEmoji && isEmojiRestricted(current, restrictedEmojis)) {
+				continue;
+			}
 
 			const tone = actualTone && actualTone > 0 && emojiPackage.toneList.hasOwnProperty(current) ? `_tone${actualTone}` : '';
 
@@ -155,6 +172,8 @@ export const getEmojisBySearchTerm = (
 	actualTone: number,
 	recentEmojis: string[],
 	setRecentEmojis: (emojis: string[]) => void,
+	canManageEmoji: boolean,
+	restrictedEmojis: ReadonlySet<string>,
 ) => {
 	const emojis = [];
 	const searchRegExp = new RegExp(escapeRegExp(searchTerm.replace(/:/g, '')), 'i');
@@ -169,6 +188,11 @@ export const getEmojisBySearchTerm = (
 			const { emojiPackage, shortnames = [] } = emojiObject;
 			let tone = '';
 			current = current.replace(/:/g, '');
+
+			if (!canManageEmoji && isEmojiRestricted(current, restrictedEmojis)) {
+				continue;
+			}
+
 			const alias = shortnames[0] !== undefined ? shortnames[0].replace(/:/g, '') : shortnames[0];
 
 			if (actualTone > 0 && emoji.packages[emojiPackage].toneList.hasOwnProperty(current)) {
@@ -215,7 +239,7 @@ export const getEmojisBySearchTerm = (
 
 export const removeFromRecent = (emoji: string, recentEmojis: string[], setRecentEmojis?: (emojis: string[]) => void) => {
 	const _emoji = emoji.replace(/(^:|:$)/g, '');
-	const pos = recentEmojis.indexOf(_emoji as never);
+	const pos = recentEmojis.indexOf(_emoji);
 
 	if (pos === -1) {
 		return;
@@ -249,8 +273,10 @@ const getEmojiRender = (emojiName: string) => {
 	return emojiPackage?.render(emojiName);
 };
 
-export const getFrequentEmoji = (frequentEmoji: string[]) => {
-	return frequentEmoji?.map((frequentEmoji) => {
-		return { emoji: frequentEmoji, image: getEmojiRender(`:${frequentEmoji}:`) };
-	});
+export const getFrequentEmoji = (frequentEmoji: string[], canManageEmoji = true, restrictedEmojis: ReadonlySet<string> = new Set()) => {
+	return frequentEmoji
+		?.filter((emojiName) => canManageEmoji || !isEmojiRestricted(emojiName, restrictedEmojis))
+		.map((emojiName) => {
+			return { emoji: emojiName, image: getEmojiRender(`:${emojiName}:`) };
+		});
 };

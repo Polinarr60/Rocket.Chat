@@ -4,7 +4,7 @@ import { useLocalStorage } from '@rocket.chat/fuselage-hooks';
 import { escapeRegExp } from '@rocket.chat/string-helpers';
 import { isTruthy } from '@rocket.chat/tools';
 import type { SubscriptionWithRoom } from '@rocket.chat/ui-contexts';
-import { useEndpoint, useSetting, useUserId, useUserPreference } from '@rocket.chat/ui-contexts';
+import { useEndpoint, usePermission, useSetting, useUserId, useUserPreference } from '@rocket.chat/ui-contexts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -27,6 +27,7 @@ import type { ComposerBoxPopupUserProps } from '../composer/ComposerBoxPopupUser
 import type { ComposerPopupContextValue, ComposerPopupOption } from '../contexts/ComposerPopupContext';
 import { ComposerPopupContext, createMessageBoxPopupConfig } from '../contexts/ComposerPopupContext';
 import useCannedResponsesQuery from './hooks/useCannedResponsesQuery';
+import { isEmojiRestricted, parseEmojiRestrictions } from '../../../../lib/utils/emojiRestrictions';
 import { normalizeUsername } from '../../../../lib/utils/normalizeUsername';
 import { pipe } from '../../../lib/cachedStores/pipe';
 
@@ -82,6 +83,9 @@ const ComposerPopupProvider = ({ children, room }: ComposerPopupProviderProps) =
 	const userSpotlight = useEndpoint('GET', '/v1/spotlight');
 	const suggestionsCount = useSetting('Number_of_users_autocomplete_suggestions', 5);
 	const cannedResponseEnabled = useSetting('Canned_Responses_Enable', true);
+	const canManageEmoji = usePermission('manage-emoji');
+	const restrictedEmojisSetting = useSetting('Message_Restricted_Emojis', '');
+	const restrictedEmojis = useMemo(() => parseEmojiRestrictions(restrictedEmojisSetting), [restrictedEmojisSetting]);
 	const [recentEmojis] = useLocalStorage<string[]>('emoji.recent', []);
 	const [previewTitle, setPreviewTitle] = useState('');
 	const isOmnichannel = isOmnichannelRoom(room);
@@ -249,7 +253,9 @@ const ComposerPopupProvider = ({ children, room }: ComposerPopupProviderProps) =
 							})
 							.filter(
 								({ _id }) =>
-									filterRegex.test(_id) && (exactFinalTone.test(_id.substring(key.length)) || seeColor.test(key) || !colorBlind.test(_id)),
+									(canManageEmoji || !isEmojiRestricted(_id, restrictedEmojis)) &&
+									filterRegex.test(_id) &&
+									(exactFinalTone.test(_id.substring(key.length)) || seeColor.test(key) || !colorBlind.test(_id)),
 							)
 							.sort(emojiSort(recents))
 							.slice(0, 10);
@@ -307,7 +313,9 @@ const ComposerPopupProvider = ({ children, room }: ComposerPopupProviderProps) =
 						})
 						.filter(
 							({ _id }) =>
-								filterRegex.test(_id) && (exactFinalTone.test(_id.substring(key.length)) || seeColor.test(key) || !colorBlind.test(_id)),
+								(canManageEmoji || !isEmojiRestricted(_id, restrictedEmojis)) &&
+								filterRegex.test(_id) &&
+								(exactFinalTone.test(_id.substring(key.length)) || seeColor.test(key) || !colorBlind.test(_id)),
 						)
 						.sort(emojiSort(recents))
 						.slice(0, 10);
@@ -406,6 +414,7 @@ const ComposerPopupProvider = ({ children, room }: ComposerPopupProviderProps) =
 		].filter<ComposerPopupOption>(isTruthy);
 	}, [
 		call,
+		canManageEmoji,
 		cannedResponseEnabled,
 		encrypted,
 		i18n,
@@ -413,6 +422,7 @@ const ComposerPopupProvider = ({ children, room }: ComposerPopupProviderProps) =
 		previewTitle,
 		queryClient,
 		recentEmojis,
+		restrictedEmojis,
 		rid,
 		suggestionsCount,
 		t,
