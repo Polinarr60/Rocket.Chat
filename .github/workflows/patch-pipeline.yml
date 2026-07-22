@@ -56,6 +56,14 @@ jobs:
           git config user.email "actions@github.com"
           corepack enable
 
+      - name: Install cross-platform dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          yarn config set supportedArchitectures --json '{"os":["linux"],"cpu":["arm64","x64"],"libc":["glibc","musl"]}'
+          yarn install --immutable
+          git restore .yarnrc.yml
+
       - name: Apply and test patches sequentially
         shell: bash
         env:
