@@ -1,0 +1,6 @@
+{
+	"tests": [
+		"yarn workspace @rocket.chat/meteor .testunit:jest lib/utils/emojiRestrictions.spec.ts client/providers/EmojiPickerProvider/EmojiPickerProvider.spec.tsx",
+		"yarn workspace @rocket.chat/meteor .testunit:server tests/unit/server/lib/messaging/reactions/setReaction.spec.ts"
+	]
+}
