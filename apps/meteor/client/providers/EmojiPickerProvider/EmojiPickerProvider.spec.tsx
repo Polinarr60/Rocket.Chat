@@ -15,6 +15,11 @@ jest.mock('@rocket.chat/fuselage-hooks', () => {
 	};
 });
 
+jest.mock('@rocket.chat/ui-contexts', () => ({
+	usePermission: jest.fn(() => false),
+	useSetting: jest.fn(() => ''),
+}));
+
 jest.mock('../../../app/emoji/client', () => ({
 	emoji: { packages: { base: { emojisByCategory: { recent: [] } } } },
 	getFrequentEmoji: jest.fn(() => []),

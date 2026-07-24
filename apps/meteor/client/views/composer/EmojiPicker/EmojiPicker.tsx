@@ -8,7 +8,7 @@ import {
 	EmojiPickerListArea,
 	EmojiPickerPreview,
 } from '@rocket.chat/ui-client';
-import { useTranslation, usePermission, useRoute } from '@rocket.chat/ui-contexts';
+import { useTranslation, usePermission, useRoute, useSetting } from '@rocket.chat/ui-contexts';
 import type { ChangeEvent, KeyboardEvent, MouseEvent, RefObject } from 'react';
 import { useLayoutEffect, useState, useEffect, useRef } from 'react';
 import type { ListRange, VirtuosoHandle } from 'react-virtuoso';
@@ -21,6 +21,7 @@ import ToneSelector from './ToneSelector';
 import ToneSelectorWrapper from './ToneSelector/ToneSelectorWrapper';
 import { emoji, getCategoriesList, getEmojisBySearchTerm } from '../../../../app/emoji/client';
 import type { EmojiItem } from '../../../../app/emoji/client';
+import { parseEmojiRestrictions } from '../../../../lib/utils/emojiRestrictions';
 import { usePreviewEmoji, useEmojiPickerData } from '../../../contexts/EmojiPickerContext';
 import { useIsVisible } from '../../room/hooks/useIsVisible';
 
@@ -45,6 +46,7 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 	const emojiCategories = getCategoriesList();
 
 	const canManageEmoji = usePermission('manage-emoji');
+	const restrictedEmojis = parseEmojiRestrictions(useSetting('Message_Restricted_Emojis', ''));
 	const customEmojiRoute = useRoute('emoji-custom');
 
 	const [searching, setSearching] = useState(false);
@@ -141,7 +143,7 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 		setCurrentCategory('');
 		setSearching(e.target.value !== '');
 
-		const emojisResult = getEmojisBySearchTerm(e.target.value, actualTone, recentEmojis, setRecentEmojis);
+		const emojisResult = getEmojisBySearchTerm(e.target.value, actualTone, recentEmojis, setRecentEmojis, canManageEmoji, restrictedEmojis);
 
 		if (emojisResult.filter((emoji) => emoji.image).length === 0) {
 			setCurrentCategory('no-results');
